@@ -1,4 +1,5 @@
 // @flow
+import merge from 'merge-anything';
 import React, { createElement, Component } from 'react';
 import determineTheme from '../utils/determineTheme';
 import { EMPTY_ARRAY, EMPTY_OBJECT } from '../utils/empties';
@@ -14,7 +15,6 @@ import { ThemeConsumer } from './ThemeProvider';
 import type { Theme } from './ThemeProvider';
 import type { Attrs, RuleSet, Target } from '../types';
 
-// $FlowFixMe
 class StyledNativeComponent extends Component<*, *> {
   root: ?Object;
 
@@ -42,7 +42,7 @@ class StyledNativeComponent extends Component<*, *> {
           // eslint-disable-next-line no-console
           console.warn(
             `Functions as object-form attrs({}) keys are now deprecated and will be removed in a future version of styled-components. Switch to the new attrs(props => ({})) syntax instead for easier and more powerful composition. The attrs key in question is "${key}" on component "${displayName}".`,
-            `\n ${(new Error()).stack}`
+            `\n ${new Error().stack}`
           )
       );
 
@@ -65,6 +65,7 @@ class StyledNativeComponent extends Component<*, *> {
         {(theme?: Theme) => {
           const {
             as: renderAs,
+            forwardedAs,
             forwardedComponent,
             forwardedRef,
             innerRef,
@@ -74,13 +75,10 @@ class StyledNativeComponent extends Component<*, *> {
 
           const { defaultProps, displayName, target } = forwardedComponent;
 
-          let generatedStyles;
-          if (theme !== undefined) {
-            const themeProp = determineTheme(this.props, theme, defaultProps);
-            generatedStyles = this.generateAndInjectStyles(themeProp, this.props);
-          } else {
-            generatedStyles = this.generateAndInjectStyles(theme || EMPTY_OBJECT, this.props);
-          }
+          const generatedStyles = this.generateAndInjectStyles(
+            determineTheme(this.props, theme, defaultProps) || EMPTY_OBJECT,
+            this.props
+          );
 
           const propsForElement = {
             ...this.attrs,
@@ -88,6 +86,7 @@ class StyledNativeComponent extends Component<*, *> {
             style: [generatedStyles].concat(style),
           };
 
+          if (forwardedAs) propsForElement.as = forwardedAs;
           if (forwardedRef) propsForElement.ref = forwardedRef;
 
           if (process.env.NODE_ENV !== 'production' && innerRef) {
@@ -114,13 +113,11 @@ class StyledNativeComponent extends Component<*, *> {
       let key;
 
       if (isFunction(resolvedAttrDef)) {
-        // $FlowFixMe
         resolvedAttrDef = resolvedAttrDef(context);
         attrDefWasFn = true;
       }
 
       /* eslint-disable guard-for-in */
-      // $FlowFixMe
       for (key in resolvedAttrDef) {
         attr = resolvedAttrDef[key];
 
@@ -186,6 +183,7 @@ export default (InlineStyle: Function) => {
     const isClass = !isTag(target);
     const isTargetStyledComp = isStyledComponent(target);
 
+    // $FlowFixMe
     const WrappedStyledNativeComponent = React.forwardRef((props, ref) => (
       <ParentComponent
         {...props}
@@ -218,11 +216,13 @@ export default (InlineStyle: Function) => {
 
     // $FlowFixMe
     WrappedStyledNativeComponent.styledComponentId = 'StyledNativeComponent';
+
     // $FlowFixMe
     WrappedStyledNativeComponent.target = isTargetStyledComp
       ? // $FlowFixMe
         target.target
       : target;
+
     // $FlowFixMe
     WrappedStyledNativeComponent.withComponent = function withComponent(tag: Target) {
       const { displayName: _, componentId: __, ...optionsToCopy } = options;
@@ -235,8 +235,19 @@ export default (InlineStyle: Function) => {
       return createStyledNativeComponent(tag, newOptions, rules);
     };
 
+    // $FlowFixMe
+    Object.defineProperty(WrappedStyledNativeComponent, 'defaultProps', {
+      get() {
+        return this._foldedDefaultProps;
+      },
+
+      set(obj) {
+        // $FlowFixMe
+        this._foldedDefaultProps = isTargetStyledComp ? merge(target.defaultProps, obj) : obj;
+      },
+    });
+
     if (isClass) {
-      // $FlowFixMe
       hoist(WrappedStyledNativeComponent, target, {
         // all SC-specific things should not be hoisted
         attrs: true,
